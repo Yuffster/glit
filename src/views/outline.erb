@@ -1,0 +1,545 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+	<script type="text/javascript" src="http://msteigerwalt.com/js/mootools-1.2.js"></script>
+	<link rel="stylesheet" href="styles/main.css"></script>
+</head>
+
+<body>
+
+
+<script>
+window.addEvent('domready', function() {
+	
+var Prompt = ({
+	get: function(title, fun) {
+		var mod = $('modal-yay');
+		if (!mod) { return; }
+		mod.getElement('h2').set('text', title);
+		mod.getElement('textarea').addEvent('blur', function() {
+			fun(this.value);
+			this.removeEvents('blur');
+			mod.removeClass('active');
+		}).focus();
+		mod.addClass('active');
+	}
+});
+var ModalList = new Class({
+	
+	Implements: Options,
+	
+	controls: {}, lists: null, currentNode: null, tree: null, cursorClass: null,
+	mode: null, selectedClass: null,
+	
+	options: {
+		cursorClass: 'current',
+		selectedClass: 'selected',
+		detailClass:   'showDetails',
+		selectSwap:  true,
+		controls: {}
+	},
+	
+	initialize: function(tree, controls, options) {
+	
+		this.setOptions(options);
+		
+		this.cursorClass   = this.options.cursorClass;
+		this.selectedClass = this.options.selectedClass;
+		this.detailClass   = this.options.detailClass;
+		this.controls      =  $H(controls || this.options.controls);
+		
+		this.setMode(this.controls.getKeys()[0]);
+		
+		this.tree  = $splat(tree);
+		this.setList(0);
+	
+	},
+	
+	handleKeypress: function(e) {
+		if (window.debugKeypress) {
+			console.log("Key = "+e.key);
+			console.log("Mode = "+this.mode);
+			console.log("Action = "+this.getModeControls().get(key));
+		}
+		var key = e.key;
+		if (e.alt)  { key = key+'-alt'; }
+		if (e.meta) { key = key+'-meta'; }
+		var action = this.getModeControls().get(key);
+		if (action) {
+			if (this[action]()!=false) { e.stop(); }
+		}
+	},
+	
+	getMode: function() {
+		return this.mode;
+	},
+	
+	setMode: function(mode) {
+		this.mode = mode;
+	},
+	
+	getModeControls: function() {
+		return $H(this.controls[this.getMode()] || {});
+	},
+	
+	setList: function(klass) {
+		var cur;
+		if ($type(klass)=='number') {
+			klass = this.tree[klass];
+		}
+		if (this.lists) {
+			var n = this.tree.indexOf(klass);
+			//Going up.
+			if (n>this.currentNode) {
+				cur = this.getCurrentItem().getFirst().getFirst('li');
+			//Going down.
+			} else if (n<this.currentNode) {
+				cur = this.getCurrentItem().getParent('li');
+			}
+			this.clearCursor();
+		}
+		this.currentNode = this.tree.indexOf(klass) || 0;
+		this.lists = $$('.'+klass) || $$('.'+this.tree[0]);
+		this.setCursor(cur);
+	},
+	
+	getLists: function() {
+		return $$(this.tree);
+	},
+	
+	getIndex: function(of) {
+		var index;
+		var my = this;
+		if (of) {
+			this.getItems().each(function(el,i) {
+				if (of==el) { index = i; }
+			});
+		} else {
+			this.getItems().each(function(el,i) {
+				if (el.hasClass(my.cursorClass)) { index = i; }
+			});
+		}
+		return index;
+	},
+	
+	getCurrentItem: function() {
+		var current = this.getItems('.'+this.cursorClass);
+		if (!current) { return false; }
+		else return current[0];
+	},
+	
+	getItems: function(sel) {
+		items = [];
+		this.lists.each(function(list) { 
+			items.combine(list.getChildren(sel));
+		});
+		return $$(items);
+	},
+	
+	getItem: function(index) {
+		return this.getItems()[index];
+	},
+	
+	getNext: function() {
+		var index = this.getIndex();
+		if (this.getIndex()+1 == this.getItems().length) {
+			return 0;
+		} else {
+			return index+1;
+		}
+	},
+	
+	getPrevious: function() {
+		var index = this.getIndex();
+		if (this.getIndex() == 0) {
+			return this.getItems().length-1;
+		} else {
+			return index-1;
+		}	
+	},
+	
+	setCursor: function(i) {
+		if ($type(i)=='element') {
+			i = this.getIndex(i);
+		} else if ($type(i)!='number') {
+			i=0;
+		}
+ 		this.clearCursor();
+		var lis = this.getItems();
+		if (lis) {
+			var li  = lis[i];
+			if (li) { li.addClass(this.cursorClass); }
+		}
+	},
+	
+	clearCursor: function() {
+		this.getItems('.'+this.cursorClass).removeClass(this.cursorClass);
+	},
+	
+	setSelected: function(el) {
+		el.addClass(this.selectedClass);
+	},
+	
+	clearSelected: function() {
+		var selected = this.getItems('.'+this.selectedClass);
+		selected.removeClass(this.selectedClass);
+	},
+	
+	toggleSelection: function() {
+		var selected = this.getItems('.'+this.selectedClass);
+		var cur = this.getCurrentItem();
+		if (cur.hasClass('selected')) {
+			this.unselect();
+		} else {
+			//If something else is already selected, we want to do a swap!
+			if (selected.length && this.options.selectSwap) { 
+				var newIndex = this.getIndex(cur);
+				this.doSwap(cur, selected[0]);
+				this.setCursor(newIndex);
+				this.clearSelected();
+				return;
+			} this.setSelected(this.getCurrentItem());
+		}
+	},
+	
+	doSwap: function(a,b) {
+		var aSpot, bSpot, aWhere, bWhere;
+		var aLoc  = a.getPrevious('li');
+		var bLoc  = b.getPrevious('li');
+		if (bLoc) {
+			aSpot  = bLoc;
+			aWhere = 'after'; 
+		} else {
+			aSpot  = b.getParent();
+			aWhere = 'top';
+		}
+		if (aLoc) {
+			bSpot  = aLoc;
+			bWhere = 'after'; 
+		} else {
+			bSpot  = a.getParent();
+			bWhere = 'top';
+		}
+		a.inject(aSpot, aWhere);
+		b.inject(bSpot, bWhere);
+	},
+	
+	moveCurrentUp: function() {
+		var prev = this.getPrevious();
+		var where = ((prev != this.getItems().length-1)) ?
+		             'before' : 'after';
+		this.getCurrentItem().inject(this.getItem(prev),where);	
+	},
+	
+	moveCurrentDown: function() {
+		var next = this.getNext();
+		var where = ((next>0)) ? 'after' : 'before';
+		this.getCurrentItem().inject(this.getItem(next), where);
+	},
+	
+	promoteCurrent: function() {
+		
+	},
+	
+	demoteCurrent: function() {
+		
+	},
+	
+	moveCursorUp: function() {
+		this.setCursor(this.getPrevious());
+	},
+	
+	moveCursorDown: function() {
+		this.setCursor(this.getNext());
+	},
+	
+	selectRange: function() {
+		
+	},
+	
+	jumpIn: function() {
+		var i = this.currentNode;
+		if (i<this.tree.length-1) {
+			this.setList(i+1);
+		}
+	},
+	
+	jumpOut: function() {
+		var i = this.currentNode;
+		if (i>0) {
+			this.setList(i-1);
+		}
+	}
+	
+});
+
+var WritingModal = new Class({
+	
+	Extends: ModalList,
+	
+	addItem: function() {
+		var titleSpan  = new Element('span', {'class':'title'});
+		var title      = new Element('span', {'class':'content'});
+		var input      = new Element('input', {type:'text', 'class':'editor'});
+		titleSpan.adopt(title,input);
+		var detailsDiv = new Element('div', {'class':'details'});
+		var details    = new Element('div', {'class':'content'});
+		var textarea   = new Element('textarea', {'class':'editor'});
+		detailsDiv.adopt(details,textarea);
+		var newItem = new Element('li').adopt(titleSpan,detailsDiv);
+		newItem.inject(this.getCurrentItem(), 'after');
+		this.setCursor(newItem);
+		this.editTitle();
+	},
+	
+	editDetails: function() {
+		var details = this.getCurrentItem().getElement('.details');
+		details.addClass('editing');
+		var input = details.getElement('textarea');
+		input.focus();
+		input.addEvent('blur', this.leaveEditor.bind(this));
+		this.setMode('writing');
+	},
+	
+	editTitle: function() {
+		var title = this.getCurrentItem().getElement('.title');
+		title.addClass('editing');
+		var input = title.getElement('input');
+		input.focus();
+		this.setMode('writing');
+	},
+	
+	outlineMode: function() {
+		this.setMode('outline');
+	},
+
+	writingMode: function() {
+		this.setMode('writing');
+	},
+
+	textMode: function() {
+
+	},
+	
+	enterEditor: function() {
+		this.getCurrentItem().addClass('editing');
+		var area = this.getCurrentItem().getFirst('textarea');
+		if (area) { area.focus(); }
+		this.writingMode();
+	},
+	
+	toggleDetails: function() {
+		$$('.'+this.tree[0]).toggleClass(this.detailClass);
+	},
+	
+	leaveEditor: function() {
+		var cur = this.getCurrentItem().getElements('.editing');
+		cur.removeClass('editing');
+		var inputs = cur.getElement('.editor');
+		inputs.each(function(i) {
+			text = i.value;
+			i.blur();
+			i.getParent().getElement('.content').set('text', text);
+		});
+		//this.toggleSelection();
+		this.setMode('outline');
+	},
+	
+	quickLeaveEditor: function() {
+		var cur = this.getCurrentItem().getElements('.editing');
+		if (cur.get('tag')=='span') { this.leaveEditor(); }
+		else { return false; }
+	},
+	
+	save: function() {
+		var data = '';
+		var my = this;
+		$$('.'+this.tree[0]).getChildren('li').each(function(sections){
+			sections.each(function(section) {
+				if (data) { data += "\n"; }
+				data += "== "+section.getElement('.title .content').get('text');
+				section.getElements('li').each(function(item) {
+					data += ('\n* '+item.getElement('.title .content').get('text')+'\n');
+					data += item.getElement('.details .content').get('text');
+				});
+			});
+		});
+		new Request.JSON({url:'outline/save'}).post({content:data});
+	}, 
+	
+	commit: function() {
+		this.save();
+		this.writingMode();
+		var my = this;
+		Prompt.get('Describe This Revision', function(message) {
+			new Request.JSON({url:'outline/commit'}).post({message:message});
+			my.outlineMode();
+		});
+	},
+	
+	loadData: function() {
+		new Request.JSON({url:'outline/get'}).get();
+	}
+
+});
+
+Event.Keys[','] = 188;
+Event.Keys['.'] = 190;
+
+var controls = {
+
+	outline: {
+		h:     'moveCurrentDown',
+		j:     'moveCursorDown',
+		k:     'moveCursorUp',
+		l:     'moveCurrentUp',
+		i:     'enterEditor',
+		g:     'promoteCurrent',
+		b:     'demoteCurrent',
+		v:     'selectRange',
+		a:     'addItem',
+		d:     'editDetails',
+		t:     'editTitle',
+		s:     'editDraft',
+		q:     'toggleDetails',
+		'.':   'jumpIn',
+		',':   'jumpOut',
+		enter: 'toggleSelection',
+		esc:   'clearSelected',
+		's-meta': 'save',
+		'c-meta': 'commit'
+	},
+
+	writing: {
+		esc:   'leaveEditor',
+		enter: 'quickLeaveEditor',
+		tab:   'quickLeaveEditor'
+	}
+
+}
+
+
+var controller = false;
+window.addEvent('domready', function() {
+	controller = new WritingModal(['chapters','scenes'], controls);
+});
+window.addEvent('keydown', function(e) {
+	if (controller) { controller.handleKeypress(e); }
+});
+
+});
+</script>
+
+<style type="text/css">
+    ul.draggable li {
+        width: 300px;
+    }
+    li.current {
+        background: #efe;
+    }
+	li textarea {
+		display:none;
+	}
+	li.selected {
+		background: #dfd;
+	}
+	li .title input {
+		display: none;
+	}
+	li .title.editing {
+		text-indent:-999em;
+	}
+	li .title.editing input {
+		display:block;
+		text-indent:0;
+	}
+	li .editing {
+		display: block;
+	}
+	li .editing textarea {
+		display:block;
+		width: 800px;
+		height: 250px;
+	}
+	li .details .content {
+		white-space: pre;
+		font-family: monospace;
+	}
+	li .details {
+		display:none;
+		background: #fff;
+	}
+	li.current .details {
+		display: block;
+	}
+	li .details.editing .content {
+		display: none;
+	}
+	.showDetails li div {
+		display: block;
+	}
+	
+	#modal-yay {
+		margin: 100px auto;
+		position: absolute;
+		top: 0;
+		left: 150px;
+		background: #eef;
+		border: 1px solid #000;
+		z-index: 999;
+		padding: 10px;
+		width: 450px;
+		display: none;
+	}
+	
+	#modal-yay.active {
+		display:block;
+	}
+	
+	#modal-yay h2 {
+		margin: 0;
+	}
+	
+	#modal-yay textarea {
+		width: 100%;
+		height: 100px;
+	}
+	
+</style>
+
+<ol class="chapters">
+	<% @outline.sections.each do |section| %>
+		<li>
+			<span class="title">
+				<span class="content"><%=section.title%></span>
+				<input type="text" class="editor" />
+			</span>
+			<ul class="scenes">
+				<% section.scenes.each do |scene|%>
+				<li>
+					<span class="title">
+						<span class="content"><%=scene.title%></span>
+						<input type="text" class="editor" />
+					</span>
+					<div class="details">
+						<div class="content"><%=scene.content%></div>
+						<textarea class="editor"><%=scene.content%></textarea>
+					</div>
+				</li>
+				<%end%>
+			</ul>
+		</li>
+	<%end%>
+</ol>
+
+<div id="modal-yay">
+	<h2 id="modal-title">Describe this Revision</h2>
+	<div id="modal-content">
+		<textarea></textarea>
+	</div>
+</div>
+
+</body>
+</html>

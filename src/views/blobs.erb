@@ -1,0 +1,5 @@
+<ul>
+<% @blobs.each do |blob| %>
+	<li><a href="<%= blob.permalink%>"><%= blob.title %></a></li>
+<% end %>
+</ul>
